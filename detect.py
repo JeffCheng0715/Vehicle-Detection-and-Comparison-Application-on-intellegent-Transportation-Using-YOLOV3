@@ -6,16 +6,18 @@ from utils.datasets import *
 from utils.utils import *
 
 
-def detect(save_img=False):
+def detect(opt,save_img=False):
     img_size = (320, 192) if ONNX_EXPORT else opt.img_size  # (320, 192) or (416, 256) or (608, 352) for (height, width)
     out, source, weights, half, view_img, save_txt = opt.output, opt.source, opt.weights, opt.half, opt.view_img, opt.save_txt
     webcam = source == '0' or source.startswith('rtsp') or source.startswith('http') or source.endswith('.txt')
 
     # Initialize
     device = torch_utils.select_device(device='cpu' if ONNX_EXPORT else opt.device)
-    if os.path.exists(out):
-        shutil.rmtree(out)  # delete output folder
-    os.makedirs(out)  # make new output folder
+    resultdir = out + os.path.basename(source)
+    if os.path.exists(resultdir):
+        shutil.rmtree(resultdir)  # delete output folder
+        
+    os.makedirs(resultdir)  # make new output folder
 
     # Initialize model
     model = Darknet(opt.cfg, img_size)
@@ -100,8 +102,9 @@ def detect(save_img=False):
                 p, s, im0 = path[i], '%g: ' % i, im0s[i]
             else:
                 p, s, im0 = path, '', im0s
-
-            save_path = str(Path(out) / Path(p).name)
+            img_path = str (Path(source) / Path(p).name)
+            save_path = str(Path(resultdir) / Path(p).name)
+            save_txt_path= str(Path(resultdir) / Path(p).stem)
             s += '%gx%g ' % img.shape[2:]  # print string
             if det is not None and len(det):
                 # Rescale boxes from img_size to im0 size
@@ -115,12 +118,12 @@ def detect(save_img=False):
                 # Write results
                 for *xyxy, conf, cls in det:
                     if save_txt:  # Write to file
-                        with open(save_path + '.txt', 'a') as file:
-                            file.write(('%g ' * 6 + '\n') % (*xyxy, cls, conf))
+                        with open(save_txt_path + '.txt', 'a') as file:
+                            file.write((os.path.abspath(img_path)+' '+'%g ' * 5 + '\n') % (*xyxy, cls))
 
                     if save_img or view_img:  # Add bbox to image
                         label = '%s %.2f' % (names[int(cls)], conf)
-                        plot_one_box(xyxy, im0, label=label, color=colors[int(cls)])
+                        plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=1)
 
             # Print time (inference + NMS)
             print('%sDone. (%.3fs)' % (s, time.time() - t))
@@ -148,20 +151,20 @@ def detect(save_img=False):
                     vid_writer.write(im0)
 
     if save_txt or save_img:
-        print('Results saved to %s' % os.getcwd() + os.sep + out)
+        print('Results saved to %s' % os.getcwd() + os.sep + out[:-1] + '\\')
         if platform == 'darwin':  # MacOS
             os.system('open ' + out + ' ' + save_path)
 
     print('Done. (%.3fs)' % (time.time() - t0))
 
-
-if __name__ == '__main__':
+    
+def main(par,vpath):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='cfg/yolov3-spp.cfg', help='*.cfg path')
-    parser.add_argument('--names', type=str, default='data/coco.names', help='*.names path')
-    parser.add_argument('--weights', type=str, default='weights/yolov3-spp-ultralytics.pt', help='weights path')
-    parser.add_argument('--source', type=str, default='data/samples', help='source')  # input file/folder, 0 for webcam
-    parser.add_argument('--output', type=str, default='output', help='output folder')  # output folder
+    parser.add_argument('--cfg', type=str, default='cfg/csdarknet53s-panet-spp.cfg', help='*.cfg path')
+    parser.add_argument('--names', type=str, default='obj.names', help='*.names path')
+    parser.add_argument('--weights', type=str, default='weights/best8.pt', help='weights path')
+    parser.add_argument('--source', type=str, default='source/', help='source')  # input file/folder, 0 for webcam
+    parser.add_argument('--output', type=str, default='result/', help='output folder')  # output folder
     parser.add_argument('--img-size', type=int, default=416, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.3, help='object confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.6, help='IOU threshold for NMS')
@@ -173,7 +176,21 @@ if __name__ == '__main__':
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     opt = parser.parse_args()
-    print(opt)
-
+    print('\n')
+    print(opt)   
+    if os.path.exists(opt.output):
+        shutil.rmtree(opt.output)  # delete output folder
+        
+    os.makedirs(opt.output)  # make new output folder
+    print('\nmake new result folder')
     with torch.no_grad():
-        detect()
+        if par == True:
+            for root, dirs, files in os.walk(vpath):
+                for name in dirs:
+                    opt.source = os.path.join(root, name)
+                    opt.save_txt=True
+                    detect(opt)
+            
+        else :
+            detect(opt)
+    return opt.output
